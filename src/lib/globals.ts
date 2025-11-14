@@ -39,6 +39,19 @@ export type StudentDataset = "default" | "100" | "1000" | "10000" | "100000";
 export let currDataset: StudentDataset = "default";
 export const lineState: Record<string, { active: boolean }> = {};
 
+export type BenchmarkData = {
+  numOfIterations: number | null;
+  avgSpeedTime: number | null;
+};
+export let benchmarkData: BenchmarkData = {
+  numOfIterations: null,
+  avgSpeedTime: null,
+};
+
+export function setBenchmarkData(newBenchmarkData) {
+  benchmarkData = newBenchmarkData;
+}
+
 export function setDataset(dataset: StudentDataset) {
   currDataset = dataset;
 }

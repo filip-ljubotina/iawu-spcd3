@@ -37,6 +37,8 @@ import {
   svg,
   width,
   yAxis,
+  benchmarkData,
+  setBenchmarkData,
 } from "./globals";
 import * as helper from "./helper";
 import * as api from "./helperApiFunc";
@@ -464,14 +466,44 @@ export function redrawPolylines(dataset: any[], parcoords: any) {
 
     case "WebGL":
       recreateCanvas();
+      initCanvasWebGL();
       redrawWebGLLines(dataset, parcoords);
       break;
 
     case "WebGPU":
       recreateCanvas();
-      redrawWebGPULines(dataset, parcoords);
+      initCanvasWebGPU()
+        .then(() => {
+          redrawWebGPULines(parcoords.newDataset, parcoords);
+        })
+        .catch((err) => console.error("WebGPU init failed:", err));
       break;
   }
+}
+
+export function runPolylineBenchmark(iters: number): number | null {
+  if (!iters || iters <= 0) {
+    console.warn("runPolylineBenchmark: iterations not set or <= 0");
+    return null;
+  }
+
+  let totalTime = 0;
+
+  for (let i = 0; i < iters; i++) {
+    const t0 = performance.now();
+    redrawPolylines(parcoords.newDataset, parcoords);
+    const t1 = performance.now();
+    totalTime += t1 - t0;
+  }
+
+  const avg = totalTime / iters;
+
+  setBenchmarkData({
+    numOfIterations: iters,
+    avgSpeedTime: avg,
+  });
+
+  return avg;
 }
 
 export function drawChart(content: any[]): void {

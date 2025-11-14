@@ -591,7 +591,6 @@ export function updateCanvasLines(
   dimension: string,
   cleanDimensionName: string,
 ): void {
-  // 1) Read brush range (in pixels) from the triangles
   const rangeTop = Number(
     select("#triangle_down_" + cleanDimensionName).attr("y")
   );
@@ -599,7 +598,6 @@ export function updateCanvasLines(
     select("#triangle_up_" + cleanDimensionName).attr("y")
   );
 
-  // 2) Maintain your filter metadata (same as before)
   const invertStatus = getInvertStatus(dimension);
   const domain = parcoords.yScales[dimension].domain();
   const maxValue = !invertStatus ? domain[1] : domain[0];
@@ -638,11 +636,9 @@ export function updateCanvasLines(
     );
   }
 
-  // 3) For each line (row in dataset), decide active/inactive
   for (const row of parcoords.newDataset) {
-    const currentLineName = getLineName(row); // e.g. use Name or some unique id
+    const currentLineName = getLineName(row); 
 
-    // Compute this line's Y pixel on the brushed dimension
     let valueY: number;
 
     if (isDimensionCategorical(dimension)) {
@@ -654,15 +650,12 @@ export function updateCanvasLines(
       if (isNaN(maxValue as any)) {
         valueY = parcoords.yScales[dimension](v);
       } else if (invertStatus) {
-        // inverted axis
         valueY = (240 / range) * (v - minValue) + 80;
       } else {
-        // normal axis
         valueY = (240 / range) * (maxValue - v) + 80;
       }
     }
 
-    // 4) Check whether the line is within the brush range
     const mainInside =
       valueY >= rangeTop + 10 && valueY <= rangeBottom;
 
@@ -673,15 +666,12 @@ export function updateCanvasLines(
       valueY === 80 && valueY === rangeTop + 10 && valueY === rangeBottom;
 
     if (!mainInside || specialAllRange320 || specialAllRange80) {
-      // outside (or special full-range cases): mark inactive
       makeLineInactiveCanvas(currentLineName);
     } else {
-      // inside: mark active
       makeLineActiveCanvas(currentLineName);
     }
   }
 
-  // 5) Redraw canvas using updated line state
   redrawPolylines(parcoords.newDataset, parcoords);
 }
 
