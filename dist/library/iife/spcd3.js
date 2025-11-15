@@ -8761,6 +8761,7 @@ void main() {
   }
   // Below function initializes WebGPU context and device
   async function initCanvasWebGPU() {
+      // console.log("Initializing WebGPU...");
       // The Navigator interface represents the state and the identity of the user agent. 
       // It allows scripts to query it and to register themselves to carry on some activities.
       if (!navigator.gpu) {
@@ -8772,6 +8773,7 @@ void main() {
           throw new Error("GPU adapter unavailable.");
       }
       device = await adapter.requestDevice();
+      // console.log("WebGPU initialized successfully.");
   }
   function redrawWebGPULines(dataset, parcoords) {
       // The devicePixelRatio of Window interface returns the ratio of the resolution in physical pixels 
@@ -8827,6 +8829,9 @@ void main() {
           // The return value @location(0) means the output color is written 
           // to the first color attachment in your render target (usually the screen)
           code: `
+      
+      @group(0) @binding(0) var<uniform> color: vec4<f32>;
+
       struct VSOut {
         @builtin(position) position : vec4<f32>,
       };
@@ -8841,9 +8846,19 @@ void main() {
       @fragment
       fn fs_main() -> @location(0) vec4<f32> {
         // rgba(0, 129, 175, 0.5)
-        return vec4<f32>(0.0, 129.0 / 255.0, 175.0 / 255.0, 0.5);
+        // return vec4<f32>(0.0, 129.0 / 255.0, 175.0 / 255.0, 0.5);
+        return color;
       }
     `
+      });
+      const bindGroupLayout = device.createBindGroupLayout({
+          entries: [
+              {
+                  binding: 0,
+                  visibility: GPUShaderStage.FRAGMENT,
+                  buffer: {},
+              },
+          ],
       });
       const vertexBufferLayout = {
           // arrayStride is the number of bytes the GPU needs to skip 
@@ -8869,7 +8884,9 @@ void main() {
       };
       const pipeline = device.createRenderPipeline({
           // Every pipeline needs a layout that describes what types of inputs.
-          layout: "auto",
+          layout: device.createPipelineLayout({
+              bindGroupLayouts: [bindGroupLayout],
+          }),
           // Now, we provide details about the vertex stage. 
           vertex: {
               // The module is the GPUShaderModule that contains your vertex shader, 
@@ -8917,6 +8934,26 @@ void main() {
               stripIndexFormat: undefined,
           },
       });
+      // Create uniform buffers for active and inactive colors
+      const activeColorBuffer = device.createBuffer({
+          size: 16, // vec4<f32> = 16 bytes
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(activeColorBuffer, 0, new Float32Array([0.0, 129.0 / 255.0, 175.0 / 255.0, 0.5]));
+      const inactiveColorBuffer = device.createBuffer({
+          size: 16,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(inactiveColorBuffer, 0, new Float32Array([211.0 / 255.0, 211.0 / 255.0, 211.0 / 255.0, 0.4]));
+      // Create bind groups for each color
+      const activeBindGroup = device.createBindGroup({
+          layout: bindGroupLayout,
+          entries: [{ binding: 0, resource: { buffer: activeColorBuffer } }],
+      });
+      const inactiveBindGroup = device.createBindGroup({
+          layout: bindGroupLayout,
+          entries: [{ binding: 0, resource: { buffer: inactiveColorBuffer } }],
+      });
       // Create command encoder to encode GPU commands
       const encoder = device.createCommandEncoder();
       // Begin a render pass
@@ -8932,7 +8969,19 @@ void main() {
       // Get canvas dimensions
       const canvasWidth = canvasEl.width;
       const canvasHeight = canvasEl.height;
+      let activeCount = 0;
+      let inactiveCount = 0;
+      // console.log("Context:", context);
       for (const d of dataset) {
+          const id = getLineName(d);
+          // Determine if the line is active or inactive
+          const active = lineState[id]?.active ?? true;
+          if (active) {
+              activeCount++;
+          }
+          else {
+              inactiveCount++;
+          }
           const pts = getPolylinePoints(d, parcoords, dpr);
           if (pts.length < 2)
               continue;
@@ -8953,9 +9002,11 @@ void main() {
           });
           device.queue.writeBuffer(vertexBuffer, 0, verts);
           pass.setPipeline(pipeline);
+          pass.setBindGroup(0, active ? activeBindGroup : inactiveBindGroup);
           pass.setVertexBuffer(0, vertexBuffer);
           pass.draw(verts.length / 2, 1, 0, 0);
       }
+      console.log(`Active lines: ${activeCount}, Inactive lines: ${inactiveCount}`);
       pass.end();
       device.queue.submit([encoder.finish()]);
   }
@@ -10831,7 +10882,7 @@ void main() {
       return selected;
   }
   function setSelection(records) {
-      console.log("Triggered setSelection");
+      // console.log("Triggered setSelection")
       for (let i = 0; i < records.length; i++) {
           let stroke = select("#" + cleanString(records[i])).style("stroke");
           if (stroke !== "lightgrey") {
@@ -10845,7 +10896,7 @@ void main() {
       }
   }
   function toggleSelection(record) {
-      console.log("Triggered toggleSelection for record:", record);
+      // console.log("Triggered toggleSelection for record:", record);
       const selected = isSelected(record);
       if (selected) {
           setUnselected(record);
@@ -10855,20 +10906,20 @@ void main() {
       }
   }
   function setSelected(record) {
-      console.log("Triggered setSelected for record:", record);
+      // console.log("Triggered setSelected for record:", record);
       let selectableLines = [];
       selectableLines.push(record);
       setSelection(selectableLines);
   }
   function setUnselected(record) {
-      console.log("Triggered setUnselected for record:", record);
+      // console.log("Triggered setUnselected for record:", record);
       selectAll("#" + cleanString(record))
           .classed("selected", false)
           .transition()
           .style("stroke", "rgba(0, 129, 175, 0.5)");
   }
   function isRecordInactive(record) {
-      console.log("Triggered isRecordInactive for record:", record);
+      // console.log("Triggered isRecordInactive for record:", record);
       const stroke = select("#" + cleanString(record));
       let node = stroke.node();
       let style = node.style.stroke;
@@ -10876,7 +10927,7 @@ void main() {
   }
   //---------- Selection Functions With IDs ----------
   function setSelectionWithId(recordIds) {
-      console.log("Triggered setSelectionWithId for recordIds:", recordIds);
+      // console.log("Triggered setSelectionWithId for recordIds:", recordIds);
       let records = [];
       for (let i = 0; i < recordIds.length; i++) {
           let record = getRecordWithId(recordIds[i]);
@@ -10885,32 +10936,32 @@ void main() {
       setSelection(records);
   }
   function isSelectedWithRecordId(recordId) {
-      console.log("Triggered isSelectedWithRecordId for recordId:", recordId);
+      // console.log("Triggered isSelectedWithRecordId for recordId:", recordId);
       let record = getRecordWithId(recordId);
       return isSelected(record);
   }
   function getRecordWithId(recordId) {
-      console.log("Triggered getRecordWithId for recordId:", recordId);
+      // console.log("Triggered getRecordWithId for recordId:", recordId);
       const item = parcoords.currentPosOfDims.find((object) => object.recordId == recordId);
       return item.key;
   }
   function toggleSelectionWithId(recordId) {
-      console.log("Triggered toggleSelectionWithId for recordId:", recordId);
+      // console.log("Triggered toggleSelectionWithId for recordId:", recordId);
       const record = getRecordWithId(recordId);
       toggleSelection(record);
   }
   function setSelectedWithId(recordId) {
-      console.log("Triggered setSelectedWithId for recordId:", recordId);
+      // console.log("Triggered setSelectedWithId for recordId:", recordId);
       const record = getRecordWithId(recordId);
       setSelected(record);
   }
   function setUnselectedWithId(recordId) {
-      console.log("Triggered setUnselectedWithId for recordId:", recordId);
+      // console.log("Triggered setUnselectedWithId for recordId:", recordId);
       const record = getRecordWithId(recordId);
       setUnselected(record);
   }
   function createHiDPICanvas(plot, w, h) {
-      console.log("Triggered createHiDPICanvas with width:", w, "and height:", h);
+      // console.log("Triggered createHiDPICanvas with width:", w, "and height:", h);
       const el = plot
           .append("canvas")
           .attr("id", "pc_canvas")
@@ -10928,15 +10979,16 @@ void main() {
       return { dpr };
   }
   function recreateCanvas() {
-      console.log("Triggered recreateCanvas");
+      // console.log("Triggered recreateCanvas");
       const plot = select("#plotArea");
       plot.select("#pc_canvas").remove();
       const { dpr } = createHiDPICanvas(plot, width, 360);
       if (currWebTech === "Canvas2D")
           initCanvas2D(dpr);
+      // else if (currWebTech === "WebGPU") initCanvasWebGPU();
   }
   function redrawPolylines(dataset, parcoords) {
-      console.log("Triggered redrawPolylines");
+      // console.log("Triggered redrawPolylines");
       switch (currWebTech) {
           case "Canvas2D":
               recreateCanvas();
@@ -10951,10 +11003,11 @@ void main() {
               redrawWebGLLines(dataset, parcoords);
               break;
           case "WebGPU":
-              // recreateCanvas();
+              recreateCanvas();
+              // console.log("Using WebGPU rendering");
               initCanvasWebGPU()
                   .then(() => {
-                  redrawWebGPULines(parcoords.newDataset, parcoords);
+                  redrawWebGPULines(dataset, parcoords);
               })
                   .catch((err) => console.error("WebGPU init failed:", err));
               break;
@@ -10980,7 +11033,7 @@ void main() {
       return avg;
   }
   function drawChart(content) {
-      console.log("Triggered drawChart");
+      // console.log("Triggered drawChart");
       setRefreshData(structuredClone(content));
       deleteChart();
       const newFeatures = content.columns.reverse();
@@ -11042,6 +11095,7 @@ void main() {
               redrawCanvasLines(parcoords.newDataset, parcoords);
               break;
           case "SVG-DOM":
+              // The setActivePathLines function call is causing interactivity in SVG mode
               setActive(setActivePathLines(svg, content, parcoords));
               svg
                   .on("contextmenu", (event) => {
@@ -11053,12 +11107,13 @@ void main() {
                   .on("mousedown.selection", (event) => event.preventDefault());
               break;
           case "WebGL":
-              console.log("Using WebGL rendering");
+              // console.log("Using WebGL rendering");
               initCanvasWebGL();
               redrawWebGLLines(parcoords.newDataset, parcoords);
               break;
           case "WebGPU":
-              console.log("Using WebGPU rendering");
+              // console.log("Using WebGPU rendering from DrawChart");
+              // setActive(setActivePathLines(svg, content, parcoords));
               initCanvasWebGPU()
                   .then(() => {
                   redrawWebGPULines(parcoords.newDataset, parcoords);
@@ -11072,7 +11127,7 @@ void main() {
       };
   }
   function reset() {
-      console.log("Triggered reset");
+      // console.log("Triggered reset");
       drawChart(refreshData);
       let toolbar = select("#toolbar");
       toolbar
@@ -11090,7 +11145,7 @@ void main() {
       }
   }
   function deleteChart() {
-      console.log("Triggered deleteChart");
+      // console.log("Triggered deleteChart");
       const wrapper = select("#parallelcoords");
       wrapper.selectAll("*").remove();
       select("#pc_svg").remove();
@@ -11108,7 +11163,7 @@ void main() {
   //---------- Helper Functions ----------
   // ---------- Needed for Built-In Interactivity Functions ---------- //
   function setUpParcoordData(data, newFeatures) {
-      console.log("Triggered setUpParcoordData");
+      // console.log("Triggered setUpParcoordData");
       setPadding(60);
       setPaddingXaxis(60);
       if (newFeatures.length <= 6) {
@@ -11219,7 +11274,6 @@ void main() {
       .style("z-index", "1000");
   let cleanupTimeout = null;
   const handlePointerEnter = (event, d) => {
-      console.log("Triggered handlePointerEnter with event:", event, "and data:", d);
       doNotHighlight();
       const data = getAllPointerEventsData(event);
       highlight(data);
@@ -11261,7 +11315,7 @@ void main() {
       }
   });
   function setActivePathLines(svg, content, parcoords) {
-      console.log("Triggered setActivePathLines");
+      // console.log("Triggered setActivePathLines")
       let contextMenu = select("#parallelcoords")
           .append("g")
           .attr("id", "contextmenuRecords")
@@ -11351,15 +11405,16 @@ void main() {
       return active;
   }
   function redrawSvgLines(svg, content, parcoords) {
-      console.log("Redrawing SVG lines");
+      // console.log("Redrawing SVG lines");
       svg.select("#contextmenuRecords").remove();
       svg.select("g.active").remove();
+      // The following line is causing interactivity in SVG mode
       setActivePathLines(svg, content, parcoords);
   }
   const delay1 = 50;
   const throttleShowValues = throttle(createToolTipForValues, delay1);
   function setContextMenuForActiceRecords(contextMenu, event, d) {
-      console.log("Triggered setContextMenuForActiceRecords with event:", event, "and data:", d);
+      // console.log("Triggered setContextMenuForActiceRecords with event:", event, "and data:", d);
       const container = document.querySelector("#parallelcoords");
       const rect = container.getBoundingClientRect();
       const x = event.clientX - rect.left;
@@ -11482,17 +11537,17 @@ void main() {
       setInvertIcon(featureAxis);
   }
   function showMarker(dimension) {
-      console.log("Triggered showMarker for dimension:", dimension);
+      // console.log("Triggered showMarker for dimension:", dimension);
       const cleanDimensionName = cleanString(dimension);
       select("#marker_" + cleanDimensionName).attr("opacity", 1);
   }
   function hideMarker(dimension) {
-      console.log("Triggered hideMarker for dimension:", dimension);
+      // console.log("Triggered hideMarker for dimension:", dimension);
       const cleanDimensionName = cleanString(dimension);
       select("#marker_" + cleanDimensionName).attr("opacity", 0);
   }
   function setDefsForIcons() {
-      console.log("Triggered setDefsForIcons");
+      // console.log("Triggered setDefsForIcons");
       const svgContainer = svg;
       let defs = svgContainer.select("defs");
       defs = svgContainer.append("defs");
