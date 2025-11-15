@@ -471,7 +471,7 @@ export function redrawPolylines(dataset: any[], parcoords: any) {
       break;
 
     case "WebGPU":
-      recreateCanvas();
+      // recreateCanvas();
       initCanvasWebGPU()
         .then(() => {
           redrawWebGPULines(parcoords.newDataset, parcoords);
@@ -984,9 +984,9 @@ function setActivePathLines(
 }
 
 export function redrawSvgLines(svg: any, content: any[], parcoords: any) {
+  console.log("Redrawing SVG lines");
   svg.select("#contextmenuRecords").remove();
   svg.select("g.active").remove();
-
   setActivePathLines(svg, content, parcoords);
 }
 

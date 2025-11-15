@@ -10937,7 +10937,7 @@ void main() {
               redrawWebGLLines(dataset, parcoords);
               break;
           case "WebGPU":
-              recreateCanvas();
+              // recreateCanvas();
               initCanvasWebGPU()
                   .then(() => {
                   redrawWebGPULines(parcoords.newDataset, parcoords);
@@ -11331,6 +11331,7 @@ void main() {
       return active;
   }
   function redrawSvgLines(svg, content, parcoords) {
+      console.log("Redrawing SVG lines");
       svg.select("#contextmenuRecords").remove();
       svg.select("g.active").remove();
       setActivePathLines(svg, content, parcoords);
@@ -11529,7 +11530,7 @@ void main() {
               line.transition().style("stroke", "rgba(255, 165, 0, 1)");
           }
           else {
-              line.transition().style("stroke", "rgba(0, 129, 175, 0.5)");
+              line.transition().style("stroke", "rgba(255, 0, 0, 0.5)");
           }
       });
       currentlyHighlightedItems = [];
