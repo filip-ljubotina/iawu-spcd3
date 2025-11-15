@@ -8750,6 +8750,11 @@ void main() {
   }
 
   let device;
+  let pipeline;
+  let pass;
+  let encoder;
+  let activeBindGroup;
+  let inactiveBindGroup;
   function getPolylinePoints(d, parcoords, dpr) {
       const pts = [];
       parcoords.newFeatures.forEach((name) => {
@@ -8759,26 +8764,7 @@ void main() {
       });
       return pts;
   }
-  // Below function initializes WebGPU context and device
-  async function initCanvasWebGPU() {
-      // console.log("Initializing WebGPU...");
-      // The Navigator interface represents the state and the identity of the user agent. 
-      // It allows scripts to query it and to register themselves to carry on some activities.
-      if (!navigator.gpu) {
-          throw new Error("WebGPU not supported.");
-      }
-      // Request and Check if a GPU adapter is available
-      const adapter = await navigator.gpu.requestAdapter();
-      if (!adapter) {
-          throw new Error("GPU adapter unavailable.");
-      }
-      device = await adapter.requestDevice();
-      // console.log("WebGPU initialized successfully.");
-  }
-  function redrawWebGPULines(dataset, parcoords) {
-      // The devicePixelRatio of Window interface returns the ratio of the resolution in physical pixels 
-      // to the resolution in CSS pixels for the current display device.
-      const dpr = window.devicePixelRatio || 1;
+  function initWebGPU() {
       // Check if the GPU device is initialized
       if (!device)
           throw new Error("GPU device is not initialized. Call initCanvasWebGPU first.");
@@ -8882,7 +8868,7 @@ void main() {
               },
           ],
       };
-      const pipeline = device.createRenderPipeline({
+      pipeline = device.createRenderPipeline({
           // Every pipeline needs a layout that describes what types of inputs.
           layout: device.createPipelineLayout({
               bindGroupLayouts: [bindGroupLayout],
@@ -8946,18 +8932,18 @@ void main() {
       });
       device.queue.writeBuffer(inactiveColorBuffer, 0, new Float32Array([211.0 / 255.0, 211.0 / 255.0, 211.0 / 255.0, 0.4]));
       // Create bind groups for each color
-      const activeBindGroup = device.createBindGroup({
+      activeBindGroup = device.createBindGroup({
           layout: bindGroupLayout,
           entries: [{ binding: 0, resource: { buffer: activeColorBuffer } }],
       });
-      const inactiveBindGroup = device.createBindGroup({
+      inactiveBindGroup = device.createBindGroup({
           layout: bindGroupLayout,
           entries: [{ binding: 0, resource: { buffer: inactiveColorBuffer } }],
       });
       // Create command encoder to encode GPU commands
-      const encoder = device.createCommandEncoder();
+      encoder = device.createCommandEncoder();
       // Begin a render pass
-      const pass = encoder.beginRenderPass({
+      pass = encoder.beginRenderPass({
           colorAttachments: [{
                   view: context.getCurrentTexture().createView(),
                   loadOp: "clear",
@@ -8966,6 +8952,28 @@ void main() {
                   storeOp: "store",
               }],
       });
+  }
+  // Below function initializes WebGPU context and device
+  async function initCanvasWebGPU() {
+      // console.log("Initializing WebGPU...");
+      // The Navigator interface represents the state and the identity of the user agent. 
+      // It allows scripts to query it and to register themselves to carry on some activities.
+      if (!navigator.gpu) {
+          throw new Error("WebGPU not supported.");
+      }
+      // Request and Check if a GPU adapter is available
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+          throw new Error("GPU adapter unavailable.");
+      }
+      device = await adapter.requestDevice();
+      // console.log("WebGPU initialized successfully.");
+      initWebGPU();
+  }
+  function redrawWebGPULines(dataset, parcoords) {
+      // The devicePixelRatio of Window interface returns the ratio of the resolution in physical pixels 
+      // to the resolution in CSS pixels for the current display device.
+      const dpr = window.devicePixelRatio || 1;
       // Get canvas dimensions
       const canvasWidth = canvasEl.width;
       const canvasHeight = canvasEl.height;

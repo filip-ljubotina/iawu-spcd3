@@ -2,6 +2,12 @@ import { canvasEl, lineState } from "./globals";
 import { getLineName } from "./brush";
 
 let device: GPUDevice;
+let pipeline: GPURenderPipeline;
+let pass: GPURenderPassEncoder;
+let encoder: GPUCommandEncoder;
+let activeBindGroup: GPUBindGroup;
+let inactiveBindGroup: GPUBindGroup;
+let context: GPUCanvasContext;
 
 function getPolylinePoints(d: any, parcoords: any, dpr: number): [number, number][] {
   const pts: [number, number][] = [];
@@ -13,34 +19,7 @@ function getPolylinePoints(d: any, parcoords: any, dpr: number): [number, number
   return pts;
 }
 
-
-// Below function initializes WebGPU context and device
-export async function initCanvasWebGPU() {
-
-  // console.log("Initializing WebGPU...");
-
-  // The Navigator interface represents the state and the identity of the user agent. 
-  // It allows scripts to query it and to register themselves to carry on some activities.
-  if (!navigator.gpu) {
-    throw new Error("WebGPU not supported.");
-  }
-
-  // Request and Check if a GPU adapter is available
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    throw new Error("GPU adapter unavailable.");
-  }
-  device = await adapter.requestDevice();
-
-  // console.log("WebGPU initialized successfully.");
-  
-}
-
-export function redrawWebGPULines(dataset: any[], parcoords: any) {
-  // The devicePixelRatio of Window interface returns the ratio of the resolution in physical pixels 
-  // to the resolution in CSS pixels for the current display device.
-  const dpr = window.devicePixelRatio || 1;
-
+export function initWebGPU() {
   // Check if the GPU device is initialized
   if (!device) throw new Error("GPU device is not initialized. Call initCanvasWebGPU first.");
 
@@ -164,7 +143,7 @@ export function redrawWebGPULines(dataset: any[], parcoords: any) {
     ],
   };
 
-  const pipeline = device.createRenderPipeline({
+  pipeline = device.createRenderPipeline({
     // Every pipeline needs a layout that describes what types of inputs.
     layout: device.createPipelineLayout({
       bindGroupLayouts: [bindGroupLayout],
@@ -244,21 +223,21 @@ export function redrawWebGPULines(dataset: any[], parcoords: any) {
   device.queue.writeBuffer(inactiveColorBuffer, 0, new Float32Array([211.0 / 255.0, 211.0 / 255.0, 211.0 / 255.0, 0.4]));
 
   // Create bind groups for each color
-  const activeBindGroup = device.createBindGroup({
+  activeBindGroup = device.createBindGroup({
     layout: bindGroupLayout,
     entries: [{ binding: 0, resource: { buffer: activeColorBuffer } }],
   });
 
-  const inactiveBindGroup = device.createBindGroup({
+  inactiveBindGroup = device.createBindGroup({
     layout: bindGroupLayout,
     entries: [{ binding: 0, resource: { buffer: inactiveColorBuffer } }],
   });
 
   // Create command encoder to encode GPU commands
-  const encoder = device.createCommandEncoder();
+  encoder = device.createCommandEncoder();
 
   // Begin a render pass
-  const pass = encoder.beginRenderPass({
+  pass = encoder.beginRenderPass({
     colorAttachments: [{
       view: context.getCurrentTexture().createView(),
       loadOp: "clear",
@@ -267,6 +246,39 @@ export function redrawWebGPULines(dataset: any[], parcoords: any) {
       storeOp: "store",
     }],
   });
+}
+
+
+// Below function initializes WebGPU context and device
+export async function initCanvasWebGPU() {
+
+  // console.log("Initializing WebGPU...");
+
+  // The Navigator interface represents the state and the identity of the user agent. 
+  // It allows scripts to query it and to register themselves to carry on some activities.
+  if (!navigator.gpu) {
+    throw new Error("WebGPU not supported.");
+  }
+
+  // Request and Check if a GPU adapter is available
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    throw new Error("GPU adapter unavailable.");
+  }
+  device = await adapter.requestDevice();
+
+  // console.log("WebGPU initialized successfully.");
+
+  initWebGPU();
+  
+}
+
+export function redrawWebGPULines(dataset: any[], parcoords: any) {
+  // The devicePixelRatio of Window interface returns the ratio of the resolution in physical pixels 
+  // to the resolution in CSS pixels for the current display device.
+  const dpr = window.devicePixelRatio || 1;
+
+  
 
 
   // Get canvas dimensions
