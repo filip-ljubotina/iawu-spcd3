@@ -24,7 +24,7 @@ export function initWebGPU() {
   if (!device) throw new Error("GPU device is not initialized. Call initCanvasWebGPU first.");
 
   // Get WebGPU context and configure it
-  const context = canvasEl.getContext("webgpu");
+  context = canvasEl.getContext("webgpu");
   const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
   
   // Configure the context with device and format
@@ -274,6 +274,25 @@ export async function initCanvasWebGPU() {
 }
 
 export function redrawWebGPULines(dataset: any[], parcoords: any) {
+
+  if (!device) {
+    throw new Error("GPU device is not initialized. Call initCanvasWebGPU first.");
+  }
+
+  // Create command encoder to encode GPU commands
+  encoder = device.createCommandEncoder();
+
+  // Begin a render pass
+  pass = encoder.beginRenderPass({
+    colorAttachments: [{
+      view: context.getCurrentTexture().createView(),
+      loadOp: "clear",
+      // clear to transparent
+      clearValue: { r: 0, g: 0, b: 0, a: 0 },
+      storeOp: "store",
+    }],
+  });
+
   // The devicePixelRatio of Window interface returns the ratio of the resolution in physical pixels 
   // to the resolution in CSS pixels for the current display device.
   const dpr = window.devicePixelRatio || 1;

@@ -8755,6 +8755,7 @@ void main() {
   let encoder;
   let activeBindGroup;
   let inactiveBindGroup;
+  let context;
   function getPolylinePoints(d, parcoords, dpr) {
       const pts = [];
       parcoords.newFeatures.forEach((name) => {
@@ -8769,7 +8770,7 @@ void main() {
       if (!device)
           throw new Error("GPU device is not initialized. Call initCanvasWebGPU first.");
       // Get WebGPU context and configure it
-      const context = canvasEl.getContext("webgpu");
+      context = canvasEl.getContext("webgpu");
       const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
       // Configure the context with device and format
       context.configure({
@@ -8971,6 +8972,21 @@ void main() {
       initWebGPU();
   }
   function redrawWebGPULines(dataset, parcoords) {
+      if (!device) {
+          throw new Error("GPU device is not initialized. Call initCanvasWebGPU first.");
+      }
+      // Create command encoder to encode GPU commands
+      encoder = device.createCommandEncoder();
+      // Begin a render pass
+      pass = encoder.beginRenderPass({
+          colorAttachments: [{
+                  view: context.getCurrentTexture().createView(),
+                  loadOp: "clear",
+                  // clear to transparent
+                  clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                  storeOp: "store",
+              }],
+      });
       // The devicePixelRatio of Window interface returns the ratio of the resolution in physical pixels 
       // to the resolution in CSS pixels for the current display device.
       const dpr = window.devicePixelRatio || 1;
@@ -11003,13 +11019,14 @@ void main() {
               redrawWebGLLines(dataset, parcoords);
               break;
           case "WebGPU":
-              recreateCanvas();
+              // recreateCanvas();
               // console.log("Using WebGPU rendering");
-              initCanvasWebGPU()
-                  .then(() => {
-                  redrawWebGPULines(dataset, parcoords);
-              })
-                  .catch((err) => console.error("WebGPU init failed:", err));
+              // initCanvasWebGPU()
+              //   .then(() => {
+              //     redrawWebGPULines(dataset, parcoords);
+              //   })
+              //   .catch((err) => console.error("WebGPU init failed:", err));
+              redrawWebGPULines(dataset, parcoords);
               break;
       }
   }

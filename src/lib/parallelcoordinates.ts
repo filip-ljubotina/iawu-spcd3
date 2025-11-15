@@ -486,13 +486,14 @@ export function redrawPolylines(dataset: any[], parcoords: any) {
       break;
 
     case "WebGPU":
-      recreateCanvas();
+      // recreateCanvas();
       // console.log("Using WebGPU rendering");
-      initCanvasWebGPU()
-        .then(() => {
-          redrawWebGPULines(dataset, parcoords);
-        })
-        .catch((err) => console.error("WebGPU init failed:", err));
+      // initCanvasWebGPU()
+      //   .then(() => {
+      //     redrawWebGPULines(dataset, parcoords);
+      //   })
+      //   .catch((err) => console.error("WebGPU init failed:", err));
+      redrawWebGPULines(dataset, parcoords);
       break;
   }
 }
