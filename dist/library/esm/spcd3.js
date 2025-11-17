@@ -8629,11 +8629,16 @@ function initCanvas2D(dpr) {
 // webglCanvas.ts
 let gl = null;
 let program;
-// Determines the position of the pixel
-// vec2 position is the vertex position (xy)
-// vec2 resolution is the canvas width/height
-// zeroToOne normalizes the points, then converts to webgl -1 to 1
-// then flips the Y axis because Canvas2D is top left 0,0 and webgl is bottom left 0,0
+// Persistent GPU buffers
+let vertexBuffer = null;
+// Cached attribute/uniform locations
+let posLoc;
+let resolutionLoc;
+let colorLoc;
+// Persistent Float32Arrays for batching (avoid allocations)
+let activeVertexData = null;
+let inactiveVertexData = null;
+// Vertex shader: converts canvas coords to clip space
 const vertexShaderSrc = `
 attribute vec2 position;
 uniform vec2 resolution;
@@ -8644,8 +8649,7 @@ void main() {
   gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1); // flip Y
 }
 `;
-// Determines the color of that pixel
-// precision mediump float is the precision level for the float
+// Fragment shader: single color per line batch
 const fragmentShaderSrc = `
 precision mediump float;
 uniform vec4 u_color;
@@ -8654,7 +8658,7 @@ void main() {
   gl_FragColor = u_color;
 }
 `;
-// Compiles shaders on gpu and throws errors if failure
+// Compile a shader
 function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -8665,8 +8669,7 @@ function createShader(gl, type, source) {
     }
     return shader;
 }
-// combines vertex and fragment shaders and links them to the program and checks for errors
-// the program is just the program that runs on the gpu to render
+// Link program
 function createProgram(gl, vShader, fShader) {
     const program = gl.createProgram();
     gl.attachShader(program, vShader);
@@ -8679,10 +8682,6 @@ function createProgram(gl, vShader, fShader) {
     return program;
 }
 // Initialize WebGL
-// dpr gets the device pixel ratio for high density screens (like my laptop)
-// canvas size is the canvas width and height * the pixel density (otherwise things will appear too small on high density screens)
-// create the vertex and fragment shader and put them in the program (which will run on the gpu)
-// 
 function initCanvasWebGL() {
     const dpr = window.devicePixelRatio || 1;
     canvasEl.width = canvasEl.clientWidth * dpr;
@@ -8694,11 +8693,18 @@ function initCanvasWebGL() {
     const fShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSrc);
     program = createProgram(gl, vShader, fShader);
     gl.viewport(0, 0, canvasEl.width, canvasEl.height);
-    // gl.clearColor(1, 1, 1, 1); // white background
     gl.clear(gl.COLOR_BUFFER_BIT);
+    // Disable alpha blending for maximum speed
+    gl.disable(gl.BLEND);
+    // Create persistent buffer
+    vertexBuffer = gl.createBuffer();
+    // Cache locations
+    posLoc = gl.getAttribLocation(program, "position");
+    resolutionLoc = gl.getUniformLocation(program, "resolution");
+    colorLoc = gl.getUniformLocation(program, "u_color");
     return gl;
 }
-// converts rows to x,y coordinates in canvas space
+// Convert row data to xy points
 function getPolylinePoints$1(d, parcoords, dpr) {
     const pts = [];
     parcoords.newFeatures.forEach((name) => {
@@ -8708,42 +8714,56 @@ function getPolylinePoints$1(d, parcoords, dpr) {
     });
     return pts;
 }
-// Draw one polyline
-function drawPolyline(pts) {
-    if (!gl || !program || !pts.length)
+// Prepares batched vertex arrays
+function prepareBatches(dataset, parcoords, dpr) {
+    const activeVertices = [];
+    const inactiveVertices = [];
+    for (const d of dataset) {
+        const id = getLineName(d);
+        const active = lineState[id]?.active ?? true;
+        const pts = getPolylinePoints$1(d, parcoords, dpr);
+        if (pts.length < 2)
+            continue;
+        // push as line segments (x0,y0,x1,y1) for gl.LINES
+        for (let i = 0; i < pts.length - 1; i++) {
+            const [x0, y0] = pts[i];
+            const [x1, y1] = pts[i + 1];
+            if (active) {
+                activeVertices.push(x0, y0, x1, y1);
+            }
+            else {
+                inactiveVertices.push(x0, y0, x1, y1);
+            }
+        }
+    }
+    activeVertexData = new Float32Array(activeVertices);
+    inactiveVertexData = new Float32Array(inactiveVertices);
+}
+// Draw a batch of lines
+function drawBatch(vertices, color) {
+    if (!gl || !vertexBuffer || !vertices || !vertices.length)
         return;
-    //flatten points and put in Float32Array which WebGL needs
-    const vertices = new Float32Array(pts.flat());
-    const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-    //run program on GPU
     gl.useProgram(program);
-    //get positions and map them to the canvas
-    const posLoc = gl.getAttribLocation(program, "position");
     gl.enableVertexAttribArray(posLoc);
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-    const resolutionLoc = gl.getUniformLocation(program, "resolution");
     gl.uniform2f(resolutionLoc, canvasEl.width, canvasEl.height);
-    //set color
-    const colorLoc = gl.getUniformLocation(program, "u_color");
-    // gl.uniform4f(colorLoc, 0, 129 / 255, 175 / 255, 0.5); // copied color from Filip but with the thinner lines it looks worse
-    gl.uniform4f(colorLoc, 0, 0.3, 0.6, 1.0); //darker because of thinner lines
-    //draw lines between all the points
-    gl.drawArrays(gl.LINE_STRIP, 0, pts.length);
-    // clear buffer
-    gl.deleteBuffer(buffer);
+    gl.uniform4f(colorLoc, color[0], color[1], color[2], color[3]);
+    gl.drawArrays(gl.LINES, 0, vertices.length / 2);
 }
-// Redraw all the lines
+// Redraw all lines
 function redrawWebGLLines(dataset, parcoords) {
-    if (!gl)
+    if (!gl || !vertexBuffer)
         return;
     gl.clear(gl.COLOR_BUFFER_BIT);
     const dpr = window.devicePixelRatio || 1;
-    for (const d of dataset) {
-        const pts = getPolylinePoints$1(d, parcoords, dpr);
-        drawPolyline(pts);
-    }
+    // prepare batched vertex arrays once per frame
+    prepareBatches(dataset, parcoords, dpr);
+    // draw active lines in one call
+    drawBatch(activeVertexData, [0 / 255, 100 / 255, 150 / 255, 1]);
+    // draw inactive lines in one call
+    drawBatch(inactiveVertexData, [150 / 255, 150 / 255, 150 / 255, 1]);
 }
 
 let device;
