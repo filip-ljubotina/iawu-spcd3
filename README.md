@@ -5,7 +5,7 @@ Our fork adapts and extends the original material for the IAWU course with a foc
 # Project goals
 - Provide a clear overview of Canvas 2D, SVG, WebGL, and WebGPU technologies.
 - Compare these technologies in terms of usability, performance and modern GPU capabilities.
-- 
+  
 # Deployed version of the project
 Here you can access the deployed version of the project: https://filip-ljubotina.github.io/iawu-spcd3/
 
