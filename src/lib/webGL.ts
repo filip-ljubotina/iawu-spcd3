@@ -1,40 +1,44 @@
-// webglCanvas.ts
 import { getLineName } from "./brush";
 import { canvasEl, lineState } from "./globals";
 
 let gl: WebGLRenderingContext | null = null;
 let program: WebGLProgram;
 
-// Persistent GPU buffer
+// Persistent buffers
 let vertexBuffer: WebGLBuffer | null = null;
+let colorBuffer: WebGLBuffer | null = null;
+let vertexCount = 0;
 
-// Cached attribute/uniform locations
+//locations
 let posLoc: number;
+let colorLoc: number;
 let resolutionLoc: WebGLUniformLocation;
-let colorLoc: WebGLUniformLocation;
 
 // Vertex and fragment shaders
+// added v_color to reduce draw calls (instead of drawing active / inactive it's just assigned to the shader)
 const vertexShaderSrc = `
 attribute vec2 position;
+attribute vec4 a_color;
 uniform vec2 resolution;
+varying vec4 v_color;
 
 void main() {
-  // convert canvas coords (top-left 0,0) to clip space (-1..1)
-  vec2 zeroToOne = position / resolution;
-  vec2 clipSpace = zeroToOne * 2.0 - 1.0;
-  gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+    vec2 zeroToOne = position / resolution;
+    vec2 clipSpace = zeroToOne * 2.0 - 1.0;
+    gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+    v_color = a_color;
 }
 `;
 
 const fragmentShaderSrc = `
 precision mediump float;
-uniform vec4 u_color; // single color per batch
+varying vec4 v_color;
 void main() {
-  gl_FragColor = u_color;
+    gl_FragColor = v_color;
 }
 `;
 
-// compile shader
+//combines the shaders
 function createShader(gl: WebGLRenderingContext, type: number, source: string) {
   const shader = gl.createShader(type);
   if (!shader) throw new Error("createShader failed");
@@ -47,7 +51,7 @@ function createShader(gl: WebGLRenderingContext, type: number, source: string) {
   return shader;
 }
 
-// create program
+//creates program of shaders to run on gpu
 function createProgram(gl: WebGLRenderingContext, vShader: WebGLShader, fShader: WebGLShader) {
   const program = gl.createProgram();
   if (!program) throw new Error("createProgram failed");
@@ -61,7 +65,7 @@ function createProgram(gl: WebGLRenderingContext, vShader: WebGLShader, fShader:
   return program;
 }
 
-// initialize WebGL
+//webgl init
 export function initCanvasWebGL() {
   const dpr = window.devicePixelRatio || 1;
   canvasEl.width = canvasEl.clientWidth * dpr;
@@ -75,24 +79,27 @@ export function initCanvasWebGL() {
   program = createProgram(gl, vShader, fShader);
 
   gl.viewport(0, 0, canvasEl.width, canvasEl.height);
-  gl.clear(gl.COLOR_BUFFER_BIT);
 
-  // no blending for max speed
-  gl.disable(gl.BLEND);
+  gl.disable(gl.BLEND);   //minor efficiency improvement
 
-  // create persistent buffer
+  // Persistent buffers
   vertexBuffer = gl.createBuffer();
-  if (!vertexBuffer) throw new Error("Failed to create vertex buffer");
+  colorBuffer = gl.createBuffer();
+  if (!vertexBuffer || !colorBuffer) throw new Error("Failed to create buffers");
 
-  // cache locations
+  // Cache locations
   posLoc = gl.getAttribLocation(program, "position");
+  colorLoc = gl.getAttribLocation(program, "a_color");
   resolutionLoc = gl.getUniformLocation(program, "resolution")!;
-  colorLoc = gl.getUniformLocation(program, "u_color")!;
+
+  // Enable attributes
+  gl.enableVertexAttribArray(posLoc);
+  gl.enableVertexAttribArray(colorLoc);
 
   return gl;
 }
 
-// convert row data to canvas XY points
+//converts to points
 function getPolylinePoints(d: any, parcoords: any, dpr: number): [number, number][] {
   const pts: [number, number][] = [];
   parcoords.newFeatures.forEach((name: string) => {
@@ -103,10 +110,10 @@ function getPolylinePoints(d: any, parcoords: any, dpr: number): [number, number
   return pts;
 }
 
-// prepare batched vertices for active/inactive lines
-function prepareBatches(dataset: any[], parcoords: any, dpr: number) {
-  const activeVertices: number[] = [];
-  const inactiveVertices: number[] = [];
+//prepare one buffer to be used no matter the datasize
+function prepareBuffers(dataset: any[], parcoords: any, dpr: number) {
+  const vertices: number[] = [];
+  const colors: number[] = [];
 
   for (const d of dataset) {
     const id = getLineName(d);
@@ -114,50 +121,46 @@ function prepareBatches(dataset: any[], parcoords: any, dpr: number) {
     const pts = getPolylinePoints(d, parcoords, dpr);
     if (pts.length < 2) continue;
 
-    // push each segment as x0,y0,x1,y1
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [x0, y0] = pts[i];
-      const [x1, y1] = pts[i + 1];
-      if (active) activeVertices.push(x0, y0, x1, y1);
-      else inactiveVertices.push(x0, y0, x1, y1);
+    // webgl uses normalized rgb colors so need to /255 to get the color alpha needs to be one since we disabled blending for performance
+    const color = active
+      ? [128/255, 192/255, 215/255, 1] // dark blue
+      : [234/255, 234/255, 234/255, 1]; // gray
+
+    for (const p of pts) {
+      vertices.push(p[0], p[1]);
+      colors.push(...color);
     }
   }
 
   return {
-    active: new Float32Array(activeVertices),
-    inactive: new Float32Array(inactiveVertices)
+    vertices: new Float32Array(vertices),
+    colors: new Float32Array(colors),
+    count: vertices.length / 2
   };
 }
 
-// draw a batch of lines
-function drawBatch(vertices: Float32Array, color: [number, number, number, number]) {
-  if (!gl || !vertexBuffer || vertices.length === 0) return;
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+//actually draw the lines
+export function redrawWebGLLines(dataset: any[], parcoords: any) {
+  if (!gl || !vertexBuffer || !colorBuffer) return;
 
   gl.useProgram(program);
-  gl.enableVertexAttribArray(posLoc);
+  gl.uniform2f(resolutionLoc, canvasEl.width, canvasEl.height);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  const dpr = window.devicePixelRatio || 1;
+  const { vertices, colors, count } = prepareBuffers(dataset, parcoords, dpr);
+  vertexCount = count;
+
+  // Upload vertex positions
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
-  gl.uniform2f(resolutionLoc, canvasEl.width, canvasEl.height);
-  gl.uniform4f(colorLoc, color[0], color[1], color[2], color[3]);
+  // Upload vertex colors
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, 0, 0);
 
-  gl.drawArrays(gl.LINES, 0, vertices.length / 2);
-}
-
-// redraw all lines
-export function redrawWebGLLines(dataset: any[], parcoords: any) {
-  if (!gl || !vertexBuffer) return;
-
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  const dpr = window.devicePixelRatio || 1;
-
-  const batches = prepareBatches(dataset, parcoords, dpr);
-
-  // draw active lines first
-  drawBatch(batches.active, [0 / 255, 100 / 255, 150 / 255, 1]);
-
-  // then draw inactive lines
-  drawBatch(batches.inactive, [150 / 255, 150 / 255, 150 / 255, 1]);
+  // Single draw call for all lines
+  gl.drawArrays(gl.LINE_STRIP, 0, vertexCount);
 }
