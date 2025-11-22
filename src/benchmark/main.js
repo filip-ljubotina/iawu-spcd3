@@ -527,7 +527,6 @@ export function generateDropDownForWebTech() {
     const value = e.target.value;
     setCurrentWebTechnologie(value);
 
-    setCurrentDataset("student_dataset");
     const datasetSelect = document.querySelector("#datasetContainer select");
 
     if (datasetSelect.value !== "student_dataset") {
@@ -573,8 +572,8 @@ export function generateBenchmarkInput() {
     currentDisplay.textContent = `Iterations: ${benchmarkData.numOfIterations}`;
   }
 
-  btn.addEventListener("click", () => {
-    const avg = runPolylineBenchmark(parseInt(input.value, 10));
+  btn.addEventListener("click", async () => {
+    const avg = await runPolylineBenchmark(parseInt(input.value, 10));
 
     if (avg == null) {
       alert("Set a valid number of iterations first.");

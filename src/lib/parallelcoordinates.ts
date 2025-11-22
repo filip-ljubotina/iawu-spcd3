@@ -469,50 +469,68 @@ export function recreateCanvas() {
 }
 
 export function redrawPolylines(dataset: any[], parcoords: any) {
-  // console.log("Triggered redrawPolylines");
   switch (currWebTech) {
     case "Canvas2D":
-      recreateCanvas();
       redrawCanvasLines(dataset, parcoords);
       break;
-
     case "SVG-DOM":
       redrawSvgLines(svg, dataset, parcoords);
       break;
-
     case "WebGL":
-      recreateCanvas();
-      // initCanvasWebGL();
-      // redrawWebGLLines(dataset, parcoords);
-      initCanvasWebGLThreeJS();
-      redrawWebGLLinesThreeJS(dataset, parcoords)
+      redrawWebGLLines(dataset, parcoords);
       break;
-
+    case "WebGLThree":
+      redrawWebGLLinesThreeJS(dataset, parcoords);
+      break;
     case "WebGPU":
-      // recreateCanvas();
-      // console.log("Using WebGPU rendering");
-      // initCanvasWebGPU()
-      //   .then(() => {
-      //     redrawWebGPULines(dataset, parcoords);
-      //   })
-      //   .catch((err) => console.error("WebGPU init failed:", err));
       redrawWebGPULines(dataset, parcoords);
       break;
   }
 }
 
-export function runPolylineBenchmark(iters: number): number | null {
+export async function setupTechnology(tech: string, parcoords: any) {
+  switch (tech) {
+    case "Canvas2D":
+      recreateCanvas();
+      const dpr = window.devicePixelRatio || 1;
+      initCanvas2D(dpr);
+      break;
+    case "SVG-DOM":
+      // SVG setup if needed
+      break;
+    case "WebGL":
+      recreateCanvas();
+      initCanvasWebGL();
+      break;
+    case "WebGLThree":
+      recreateCanvas();
+      initCanvasWebGLThreeJS();
+      break;
+    case "WebGPU":
+      recreateCanvas();
+      await initCanvasWebGPU();
+      break;
+  }
+}
+
+export async function runPolylineBenchmark(
+  iters: number
+): Promise<number | null> {
   if (!iters || iters <= 0) {
     console.warn("runPolylineBenchmark: iterations not set or <= 0");
     return null;
   }
 
+  // Setup ONCE before benchmarking
+
   let totalTime = 0;
 
   for (let i = 0; i < iters; i++) {
+    await setupTechnology(currWebTech, parcoords);
     const t0 = performance.now();
     redrawPolylines(parcoords.newDataset, parcoords);
     const t1 = performance.now();
+
     totalTime += t1 - t0;
   }
 
@@ -615,11 +633,12 @@ export function drawChart(content: any[]): void {
         .on("mousedown.selection", (event: any) => event.preventDefault());
       break;
     case "WebGL":
-      // console.log("Using WebGL rendering");
-      // initCanvasWebGL();
-      // redrawWebGLLines(parcoords.newDataset, parcoords);
+      initCanvasWebGL();
+      redrawWebGLLines(parcoords.newDataset, parcoords);
+      break;
+    case "WebGLThree":
       initCanvasWebGLThreeJS();
-      redrawWebGLLinesThreeJS(parcoords.newDataset, parcoords)
+      redrawWebGLLinesThreeJS(parcoords.newDataset, parcoords);
       break;
     case "WebGPU":
       // console.log("Using WebGPU rendering from DrawChart");
